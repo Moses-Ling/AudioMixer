@@ -11,9 +11,8 @@
 
     <Window.Resources>
         <!-- Taskbar Icon defined as a resource -->
-        <!-- Note: IconSource="/Images/DefaultIcon.ico" is a placeholder. Needs an actual icon file in an Images folder. -->
+        <!-- Note: IconSource is removed for now as the file doesn't exist. Needs an actual icon file in an Images folder later. -->
         <tb:TaskbarIcon x:Key="NotifyIconResource"
-                        IconSource="/Images/DefaultIcon.ico"
                         ToolTipText="Audio Mixer App"
                         TrayMouseDoubleClick="NotifyIcon_TrayMouseDoubleClick">
             <tb:TaskbarIcon.ContextMenu>
