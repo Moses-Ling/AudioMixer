@@ -8,6 +8,8 @@ using System.Windows.Input; // For ICommand
 using AudioMixerApp.Helpers; // For RelayCommand
 using AudioMixerApp.Services; // To reference AudioDevice etc.
 using NAudio.Wave; // For WaveFormat
+using Microsoft.Win32; // For Registry access
+using System.Reflection; // For Assembly to get executable path
 
 namespace AudioMixerApp.ViewModels
 {
@@ -168,6 +170,19 @@ namespace AudioMixerApp.ViewModels
             set => SetProperty(ref _levelMeterColor, value);
         }
 
+        private bool _startWithWindows = false;
+        public bool StartWithWindows
+        {
+            get => _startWithWindows;
+            set
+            {
+                if (SetProperty(ref _startWithWindows, value))
+                {
+                    SetStartup(value); // Call registry update method
+                }
+            }
+        }
+
 
         // Constructor
         public MainViewModel()
@@ -194,6 +209,10 @@ namespace AudioMixerApp.ViewModels
             // Initialize Commands (Task 33)
             StartStopCommand = new RelayCommand(ExecuteStartStop, CanExecuteStartStop);
             // Add other commands later (e.g., for system tray)
+
+            // Read initial startup state from registry
+            _startWithWindows = IsStartupEnabled();
+            OnPropertyChanged(nameof(StartWithWindows)); // Notify UI of initial state
         }
 
         // Asynchronous initialization
@@ -453,6 +472,76 @@ namespace AudioMixerApp.ViewModels
             _ = SaveSettingsAsync();
 
             Console.WriteLine("ViewModel cleaned up.");
+        }
+
+
+        // --- Startup with Windows Logic (Task 39) ---
+
+        private const string AppRegistryKey = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+        private const string AppRegistryValueName = "AudioMixerApp"; // Choose a unique name
+
+        private bool IsStartupEnabled()
+        {
+            try
+            {
+                using RegistryKey? key = Registry.CurrentUser.OpenSubKey(AppRegistryKey, false);
+                return key?.GetValue(AppRegistryValueName) != null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error reading startup registry key: {ex.Message}");
+                return false; // Assume disabled if error occurs
+            }
+        }
+
+        private void SetStartup(bool enable)
+        {
+            try
+            {
+                using RegistryKey? key = Registry.CurrentUser.OpenSubKey(AppRegistryKey, true);
+                if (key == null)
+                {
+                    Console.WriteLine($"Error: Could not open registry key HKEY_CURRENT_USER\\{AppRegistryKey} for writing.");
+                    return;
+                }
+
+                string? executablePath = Assembly.GetExecutingAssembly().Location;
+                // For .NET Core/5+, Location might be the .dll. Need the host executable (.exe).
+                // A common way is to replace .dll with .exe if applicable.
+                if (!string.IsNullOrEmpty(executablePath) && executablePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                {
+                     executablePath = System.IO.Path.ChangeExtension(executablePath, ".exe");
+                }
+
+                if (string.IsNullOrEmpty(executablePath))
+                {
+                    Console.WriteLine("Error: Could not determine application executable path.");
+                    return;
+                }
+
+
+                if (enable)
+                {
+                    // Add the value to run on startup
+                    // Enclose path in quotes if it contains spaces
+                    key.SetValue(AppRegistryValueName, $"\"{executablePath}\"");
+                    Console.WriteLine($"Added '{AppRegistryValueName}' to startup.");
+                }
+                else
+                {
+                    // Remove the value
+                    if (key.GetValue(AppRegistryValueName) != null)
+                    {
+                        key.DeleteValue(AppRegistryValueName, false);
+                        Console.WriteLine($"Removed '{AppRegistryValueName}' from startup.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error modifying startup registry key: {ex.Message}");
+                // Optionally inform the user via UI
+            }
         }
     }
 }

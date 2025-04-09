@@ -34,6 +34,7 @@
             <RowDefinition Height="Auto"/> <!-- Mute Control -->
             <RowDefinition Height="Auto"/> <!-- Level Meter -->
             <RowDefinition Height="Auto"/> <!-- Status -->
+            <RowDefinition Height="Auto"/> <!-- Startup Option -->
             <RowDefinition Height="*"/>    <!-- Spacer -->
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
@@ -80,6 +81,11 @@
 
         <!-- Start/Stop Button -->
         <Button Grid.Row="6" Grid.Column="1" Content="Start / Stop Mixing" Command="{Binding StartStopCommand}" Margin="5" Padding="10,5"/>
+
+        <!-- Startup with Windows Option (Task 39) -->
+        <Label Grid.Row="7" Grid.Column="0" Content="Start with Windows:" VerticalAlignment="Center"/>
+        <CheckBox Grid.Row="7" Grid.Column="1" Margin="5" VerticalAlignment="Center"
+                  IsChecked="{Binding StartWithWindows, Mode=TwoWay}"/>
 
     </Grid>
 </Window>
