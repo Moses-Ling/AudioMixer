@@ -5,8 +5,61 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AudioMixerApp"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        Title="Windows Microphone Audio Mixer" Height="350" Width="500" MinHeight="300" MinWidth="450">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/> <!-- Input Device -->
+            <RowDefinition Height="Auto"/> <!-- Output Device -->
+            <RowDefinition Height="Auto"/> <!-- Volume Control -->
+            <RowDefinition Height="Auto"/> <!-- Mute Control -->
+            <RowDefinition Height="Auto"/> <!-- Level Meter -->
+            <RowDefinition Height="Auto"/> <!-- Status -->
+            <RowDefinition Height="*"/>    <!-- Spacer -->
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/> <!-- Labels -->
+            <ColumnDefinition Width="*"/>    <!-- Controls -->
+            <ColumnDefinition Width="Auto"/> <!-- Volume % / Status Indicator -->
+        </Grid.ColumnDefinitions>
+
+        <!-- Input Device Selection (Task 26) -->
+        <Label Grid.Row="0" Grid.Column="0" Content="Microphone Input:" VerticalAlignment="Center"/>
+        <ComboBox Grid.Row="0" Grid.Column="1" Margin="5" VerticalAlignment="Center"
+                  ItemsSource="{Binding InputDevices}"
+                  SelectedItem="{Binding SelectedInputDevice}"
+                  DisplayMemberPath="Name" SelectedValuePath="Id" />
+
+        <!-- Output Device Selection (Task 26) -->
+        <Label Grid.Row="1" Grid.Column="0" Content="Audio Output:" VerticalAlignment="Center"/>
+        <ComboBox Grid.Row="1" Grid.Column="1" Margin="5" VerticalAlignment="Center"
+                  ItemsSource="{Binding OutputDevices}"
+                  SelectedItem="{Binding SelectedOutputDevice}"
+                  DisplayMemberPath="Name" SelectedValuePath="Id" />
+
+        <!-- Volume Control (Task 27) -->
+        <Label Grid.Row="2" Grid.Column="0" Content="Mic Volume:" VerticalAlignment="Center"/>
+        <Slider Grid.Row="2" Grid.Column="1" Margin="5" VerticalAlignment="Center" Minimum="0" Maximum="100"
+                Value="{Binding MicrophoneVolumePercent, Mode=TwoWay}" TickFrequency="1" IsSnapToTickEnabled="True"/>
+        <TextBlock Grid.Row="2" Grid.Column="2" Margin="5,0,0,0" VerticalAlignment="Center"
+                   Text="{Binding MicrophoneVolumePercent, StringFormat={}{0:F0}%}"/>
+
+        <!-- Mute Control (Task 28) -->
+        <Label Grid.Row="3" Grid.Column="0" Content="Mute Mic:" VerticalAlignment="Center"/>
+        <CheckBox Grid.Row="3" Grid.Column="1" Margin="5" VerticalAlignment="Center"
+                  IsChecked="{Binding IsMicrophoneMuted, Mode=TwoWay}"/>
+
+        <!-- Level Meter (Task 29) -->
+        <Label Grid.Row="4" Grid.Column="0" Content="Mic Level:" VerticalAlignment="Center"/>
+        <ProgressBar Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Margin="5" Height="15" Minimum="0" Maximum="100"
+                     Value="{Binding MicrophoneLevel}"/>
+
+        <!-- Status Indicator (Task 30) -->
+        <Label Grid.Row="5" Grid.Column="0" Content="Status:" VerticalAlignment="Center"/>
+        <Ellipse Grid.Row="5" Grid.Column="2" Fill="{Binding StatusColor}" Width="15" Height="15" Margin="5,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                 ToolTip="{Binding StatusText}"/>
+
+        <!-- TODO: Add Start/Stop Button bound to StartStopCommand -->
+        <!-- Example: <Button Grid.Row="6" Grid.Column="1" Content="Start/Stop" Command="{Binding StartStopCommand}" Margin="5"/> -->
 
     </Grid>
 </Window>
