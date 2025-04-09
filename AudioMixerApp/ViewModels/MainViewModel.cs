@@ -10,6 +10,7 @@ using AudioMixerApp.Services; // To reference AudioDevice etc.
 using NAudio.Wave; // For WaveFormat
 using Microsoft.Win32; // For Registry access
 using System.Reflection; // For Assembly to get executable path
+using System.Windows; // For MessageBox
 
 namespace AudioMixerApp.ViewModels
 {
@@ -306,42 +307,44 @@ namespace AudioMixerApp.ViewModels
             {
                 // --- Start Logic ---
                 Console.WriteLine("Starting audio processing...");
-                if (SelectedInputDevice == null || SelectedOutputDevice == null)
-                {
-                    Console.WriteLine("Error: Input or Output device not selected.");
-                    // Show error message to user?
-                    StatusText = "Error: Select Devices";
-                    StatusColor = "Red";
-                    return;
-                }
+                 if (SelectedInputDevice == null || SelectedOutputDevice == null)
+                 {
+                     Console.WriteLine("Error: Input or Output device not selected.");
+                     MessageBox.Show("Please select both an input and an output device before starting.", "Device Selection Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                     StatusText = "Error: Select Devices";
+                     StatusColor = "Red";
+                     return;
+                 }
 
                 // Initialize output with the mixer as the source
-                if (!_audioOutputService.Init(_audioMixerService, SelectedOutputDevice.Id))
-                {
-                     Console.WriteLine("Error: Failed to initialize output device.");
-                     StatusText = "Error: Output Init Failed";
-                     StatusColor = "Red";
-                     return;
-                }
+                 if (!_audioOutputService.Init(_audioMixerService, SelectedOutputDevice.Id))
+                 {
+                      Console.WriteLine("Error: Failed to initialize output device.");
+                      MessageBox.Show($"Failed to initialize the selected output device: {SelectedOutputDevice.Name}", "Output Device Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                      StatusText = "Error: Output Init Failed";
+                      StatusColor = "Red";
+                      return;
+                 }
 
                 // Start microphone capture
-                if (!_microphoneCaptureService.StartCapture(SelectedInputDevice.Id))
-                {
-                     Console.WriteLine("Error: Failed to start microphone capture.");
-                     StatusText = "Error: Mic Capture Failed";
-                     StatusColor = "Red";
-                     _audioOutputService.Stop(); // Stop output if mic fails
-                     return;
-                }
+                 if (!_microphoneCaptureService.StartCapture(SelectedInputDevice.Id))
+                 {
+                      Console.WriteLine("Error: Failed to start microphone capture.");
+                      MessageBox.Show($"Failed to start capturing from the selected microphone: {SelectedInputDevice.Name}", "Microphone Capture Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                      StatusText = "Error: Mic Capture Failed";
+                      StatusColor = "Red";
+                      _audioOutputService.Stop(); // Stop output if mic fails
+                      return;
+                 }
                 // Create buffer for microphone input and connect to mixer
                 if (_microphoneCaptureService.WaveFormat != null)
-                {
-                    _micBuffer = new BufferedWaveProvider(_microphoneCaptureService.WaveFormat)
-                    {
-                        BufferDuration = TimeSpan.FromMilliseconds(200), // Buffer 200ms of audio
-                        DiscardOnBufferOverflow = true // Prevent buffer from growing indefinitely
-                    };
-                    _audioMixerService.SetMicrophoneInput(_micBuffer);
+                 {
+                     _micBuffer = new BufferedWaveProvider(_microphoneCaptureService.WaveFormat)
+                     {
+                         BufferDuration = TimeSpan.FromMilliseconds(100), // Reduced buffer to 100ms
+                         DiscardOnBufferOverflow = true // Prevent buffer from growing indefinitely
+                     };
+                     _audioMixerService.SetMicrophoneInput(_micBuffer);
                 }
                 else
                 {
@@ -369,13 +372,13 @@ namespace AudioMixerApp.ViewModels
                 {
                     // Create buffer for system audio input and connect to mixer
                     if (_systemAudioCaptureService.WaveFormat != null)
-                    {
-                         _sysBuffer = new BufferedWaveProvider(_systemAudioCaptureService.WaveFormat)
-                         {
-                             BufferDuration = TimeSpan.FromMilliseconds(200),
-                             DiscardOnBufferOverflow = true
-                         };
-                         _audioMixerService.SetSystemAudioInput(_sysBuffer);
+                     {
+                          _sysBuffer = new BufferedWaveProvider(_systemAudioCaptureService.WaveFormat)
+                          {
+                              BufferDuration = TimeSpan.FromMilliseconds(100), // Reduced buffer to 100ms
+                              DiscardOnBufferOverflow = true
+                          };
+                          _audioMixerService.SetSystemAudioInput(_sysBuffer);
                     }
                      else
                     {
