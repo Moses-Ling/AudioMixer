@@ -41,6 +41,10 @@ namespace AudioMixerApp.ViewModels
         private readonly AudioMixerService _audioMixerService;
         private readonly AudioOutputService _audioOutputService;
 
+        // Buffers for audio data between capture and mixer
+        private BufferedWaveProvider? _micBuffer;
+        private BufferedWaveProvider? _sysBuffer;
+
         // Properties for UI Binding (Examples - will be expanded)
 
         private ObservableCollection<AudioDevice> _inputDevices = new();
@@ -181,9 +185,9 @@ namespace AudioMixerApp.ViewModels
             LoadAudioDevices();
             await LoadSettingsAsync(); // Load and apply settings
 
-             // Wire up event handlers (Example - implement actual logic later)
-            // _microphoneCaptureService.DataAvailable += MicrophoneDataAvailable;
-            // _systemAudioCaptureService.DataAvailable += SystemAudioDataAvailable;
+            // Wire up event handlers
+            _microphoneCaptureService.DataAvailable += MicrophoneDataAvailable;
+            _systemAudioCaptureService.DataAvailable += SystemAudioDataAvailable;
         }
 
         // Method to load audio devices into the collections
@@ -293,8 +297,25 @@ namespace AudioMixerApp.ViewModels
                      _audioOutputService.Stop(); // Stop output if mic fails
                      return;
                 }
-                 // TODO: Connect mic capture data to mixer input (needs buffering)
-                 // _audioMixerService.SetMicrophoneInput(...buffered provider...);
+                // Create buffer for microphone input and connect to mixer
+                if (_microphoneCaptureService.WaveFormat != null)
+                {
+                    _micBuffer = new BufferedWaveProvider(_microphoneCaptureService.WaveFormat)
+                    {
+                        BufferDuration = TimeSpan.FromMilliseconds(200), // Buffer 200ms of audio
+                        DiscardOnBufferOverflow = true // Prevent buffer from growing indefinitely
+                    };
+                    _audioMixerService.SetMicrophoneInput(_micBuffer);
+                }
+                else
+                {
+                     Console.WriteLine("Error: Microphone capture WaveFormat is null.");
+                     StatusText = "Error: Mic Format";
+                     StatusColor = "Red";
+                     _microphoneCaptureService.StopCapture();
+                     _audioOutputService.Stop();
+                     return;
+                }
 
 
                 // Start system audio capture
@@ -305,9 +326,28 @@ namespace AudioMixerApp.ViewModels
                      // StatusText = "Warning: System Audio Failed";
                      // StatusColor = "Orange";
                      // Don't stop everything, just proceed without system audio
+                     _sysBuffer = null; // Ensure buffer is null if capture fails
+                     _audioMixerService.SetSystemAudioInput(null); // Ensure mixer doesn't use old buffer
                 }
-                 // TODO: Connect system capture data to mixer input (needs buffering)
-                 // _audioMixerService.SetSystemAudioInput(...buffered provider...);
+                else
+                {
+                    // Create buffer for system audio input and connect to mixer
+                    if (_systemAudioCaptureService.WaveFormat != null)
+                    {
+                         _sysBuffer = new BufferedWaveProvider(_systemAudioCaptureService.WaveFormat)
+                         {
+                             BufferDuration = TimeSpan.FromMilliseconds(200),
+                             DiscardOnBufferOverflow = true
+                         };
+                         _audioMixerService.SetSystemAudioInput(_sysBuffer);
+                    }
+                     else
+                    {
+                        Console.WriteLine("Warning: System audio capture WaveFormat is null. Continuing without system audio.");
+                        _sysBuffer = null;
+                        _audioMixerService.SetSystemAudioInput(null);
+                    }
+                }
 
 
                 // Start playback
@@ -335,21 +375,41 @@ namespace AudioMixerApp.ViewModels
         }
 
 
-        // Cleanup
-        // Wire up DataAvailable events to the mixer (Simplified example)
-        // Note: This needs proper WaveProvider buffering/conversion before adding to mixer
-        /*
+        // --- Event Handlers for Audio Data ---
+
         private void MicrophoneDataAvailable(object? sender, WaveInEventArgs e)
         {
-            // TODO: Buffer and provide data to _audioMixerService.SetMicrophoneInput
-            // Also update MicrophoneLevel property
+            if (_micBuffer == null) return;
+
+            // Add captured data to the buffer
+            _micBuffer.AddSamples(e.Buffer, 0, e.BytesRecorded);
+
+            // Calculate peak level for the UI meter (Task 29 update)
+            float max = 0;
+            // Interpret buffer based on WaveFormat (assuming float for WasapiCapture)
+            if (_micBuffer.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat)
+            {
+                var buffer = new WaveBuffer(e.Buffer);
+                int samples = e.BytesRecorded / 4; // 4 bytes per float sample
+                for (int i = 0; i < samples; i++)
+                {
+                    var sample = Math.Abs(buffer.FloatBuffer[i]);
+                    if (sample > max) max = sample;
+                }
+            }
+            // Add handling for other formats if necessary
+
+            // Update the UI property (scale 0.0-1.0 to 0-100)
+            // Use Dispatcher for thread safety if needed, but OnPropertyChanged usually handles it
+            MicrophoneLevel = max * 100.0;
         }
 
         private void SystemAudioDataAvailable(object? sender, WaveInEventArgs e)
         {
-            // TODO: Buffer and provide data to _audioMixerService.SetSystemAudioInput
+             if (_sysBuffer == null) return;
+            // Add captured data to the buffer
+            _sysBuffer.AddSamples(e.Buffer, 0, e.BytesRecorded);
         }
-        */
 
         // Cleanup
         public void Cleanup()
