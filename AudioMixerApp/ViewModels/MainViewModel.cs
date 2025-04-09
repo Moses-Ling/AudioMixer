@@ -249,16 +249,35 @@ namespace AudioMixerApp.ViewModels
             Console.WriteLine("Loading settings...");
             var settings = await _settingsService.LoadSettingsAsync();
 
-            // Apply settings to ViewModel properties
-            // Use FirstOrDefault to find matching device by ID
-            SelectedInputDevice = InputDevices.FirstOrDefault(d => d.Id == settings.LastInputDeviceId);
-            SelectedOutputDevice = OutputDevices.FirstOrDefault(d => d.Id == settings.LastOutputDeviceId);
+             // Apply settings to ViewModel properties
+             // Use FirstOrDefault to find matching device by ID
+             var loadedInputDevice = InputDevices.FirstOrDefault(d => d.Id == settings.LastInputDeviceId);
+             var loadedOutputDevice = OutputDevices.FirstOrDefault(d => d.Id == settings.LastOutputDeviceId);
 
-            // Fallback to default if last used device not found or not set
-            if (SelectedInputDevice == null) SelectedInputDevice = _audioDeviceService.GetDefaultInputDevice();
-            if (SelectedOutputDevice == null) SelectedOutputDevice = _audioDeviceService.GetDefaultOutputDevice();
+             // Check if saved input device is missing
+             if (loadedInputDevice == null && !string.IsNullOrEmpty(settings.LastInputDeviceId))
+             {
+                 MessageBox.Show($"Previously selected input device (ID: {settings.LastInputDeviceId}) not found. Falling back to default.", "Input Device Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                 SelectedInputDevice = _audioDeviceService.GetDefaultInputDevice(); // Fallback to default
+             }
+             else
+             {
+                 SelectedInputDevice = loadedInputDevice ?? _audioDeviceService.GetDefaultInputDevice(); // Use loaded or default
+             }
 
-            MicrophoneVolumePercent = settings.LastVolumePercent;
+             // Check if saved output device is missing
+             if (loadedOutputDevice == null && !string.IsNullOrEmpty(settings.LastOutputDeviceId))
+             {
+                 MessageBox.Show($"Previously selected output device (ID: {settings.LastOutputDeviceId}) not found. Falling back to default.", "Output Device Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                 SelectedOutputDevice = _audioDeviceService.GetDefaultOutputDevice(); // Fallback to default
+             }
+             else
+             {
+                 SelectedOutputDevice = loadedOutputDevice ?? _audioDeviceService.GetDefaultOutputDevice(); // Use loaded or default
+             }
+
+
+             MicrophoneVolumePercent = settings.LastVolumePercent;
             IsMicrophoneMuted = settings.LastMuteState;
 
             Console.WriteLine("Settings loaded and applied.");
