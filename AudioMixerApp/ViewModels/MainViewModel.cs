@@ -11,7 +11,6 @@ using NAudio.Wave; // For WaveFormat
 using Microsoft.Win32; // For Registry access
 using System.Reflection; // For Assembly to get executable path
 using System.Windows; // For MessageBox
-using NAudio.Wave.SampleProviders; // For ToSampleProvider
 
 namespace AudioMixerApp.ViewModels
 {
@@ -48,12 +47,6 @@ namespace AudioMixerApp.ViewModels
         // Buffers for audio data between capture and mixer
         private BufferedWaveProvider? _micBuffer;
         private BufferedWaveProvider? _sysBuffer;
-        // Sample provider wrappers for AEC/Mixer
-        private ISampleProvider? _micSampleProvider;
-        private ISampleProvider? _sysSampleProvider;
-        // Echo cancellation service instance
-        private EchoCancellationService? _echoCancellationService;
-
 
         // Properties for UI Binding (Examples - will be expanded)
 
@@ -122,7 +115,7 @@ namespace AudioMixerApp.ViewModels
             }
         }
 
-        private bool _isMicrophoneMuted = false;
+         private bool _isMicrophoneMuted = false;
         public bool IsMicrophoneMuted
         {
             get => _isMicrophoneMuted;
@@ -146,30 +139,6 @@ namespace AudioMixerApp.ViewModels
                         LevelMeterColor = "DodgerBlue"; // Restore default color when unmuted
                     }
                  }
-            }
-        }
-
-        // Note: This property seems duplicated from AudioMixerService.
-        // Consider removing it or ensuring synchronization if needed elsewhere.
-        private bool _useEchoCancellation = true;
-        public bool UseEchoCancellation
-        {
-            get => _useEchoCancellation;
-            set
-            {
-                if (SetProperty(ref _useEchoCancellation, value))
-                {
-                    // Update the mixer's echo cancellation setting (if it exists there)
-                    // if (_audioMixerService != null)
-                    // {
-                    //     _audioMixerService.UseEchoCancellation = value;
-                    // }
-                    Console.WriteLine($"Echo cancellation UI setting changed to: {value}");
-                    // Trigger saving settings when echo cancellation state changes
-                    _ = SaveSettingsAsync();
-                    // TODO: Need to restart audio processing for this change to take effect
-                    //       as the AEC service is instantiated during Start.
-                }
             }
         }
 
@@ -309,8 +278,7 @@ namespace AudioMixerApp.ViewModels
 
 
              MicrophoneVolumePercent = settings.LastVolumePercent;
-             IsMicrophoneMuted = settings.LastMuteState;
-             UseEchoCancellation = settings.UseEchoCancellation; // Load AEC setting
+            IsMicrophoneMuted = settings.LastMuteState;
 
             Console.WriteLine("Settings loaded and applied.");
         }
@@ -324,8 +292,7 @@ namespace AudioMixerApp.ViewModels
                 LastInputDeviceId = SelectedInputDevice?.Id,
                 LastOutputDeviceId = SelectedOutputDevice?.Id,
                 LastVolumePercent = MicrophoneVolumePercent,
-                LastMuteState = IsMicrophoneMuted,
-                UseEchoCancellation = UseEchoCancellation // Save AEC setting
+                LastMuteState = IsMicrophoneMuted
             };
             await _settingsService.SaveSettingsAsync(settings);
             Console.WriteLine("Settings saved.");
@@ -347,20 +314,9 @@ namespace AudioMixerApp.ViewModels
                 _audioOutputService?.Stop();
                 _microphoneCaptureService?.StopCapture();
                 _systemAudioCaptureService?.StopCapture();
-
-                // Dispose AEC service if it was created
-                _echoCancellationService?.Dispose();
-                _echoCancellationService = null;
-
-                // Reset providers
-                _micSampleProvider = null;
-                _sysSampleProvider = null;
-                _micBuffer = null; // Buffers are implicitly handled by providers
-                _sysBuffer = null;
-
-                // Clear mixer inputs
-                _audioMixerService?.SetMicrophoneInput(null);
-                _audioMixerService?.SetSystemAudioInput(null);
+                // Clear mixer inputs? Depends on desired behavior.
+                // _audioMixerService?.SetMicrophoneInput(null);
+                // _audioMixerService?.SetSystemAudioInput(null);
 
                 StatusText = "Idle";
                 StatusColor = "Gray";
@@ -399,7 +355,7 @@ namespace AudioMixerApp.ViewModels
                       _audioOutputService.Stop(); // Stop output if mic fails
                       return;
                  }
-                // Create buffer and sample provider for microphone input
+                // Create buffer for microphone input and connect to mixer
                 if (_microphoneCaptureService.WaveFormat != null)
                  {
                      _micBuffer = new BufferedWaveProvider(_microphoneCaptureService.WaveFormat)
@@ -407,11 +363,9 @@ namespace AudioMixerApp.ViewModels
                          BufferDuration = TimeSpan.FromMilliseconds(100), // Reduced buffer to 100ms
                          DiscardOnBufferOverflow = true // Prevent buffer from growing indefinitely
                      };
-                     // Convert mic buffer to ISampleProvider (assuming float format for now)
-                     // TODO: Add format conversion if necessary to match AEC/Mixer requirements
-                     _micSampleProvider = _micBuffer.ToSampleProvider();
-                 }
-                 else
+                     _audioMixerService.SetMicrophoneInput(_micBuffer);
+                }
+                else
                 {
                      Console.WriteLine("Error: Microphone capture WaveFormat is null.");
                      StatusText = "Error: Mic Format";
@@ -429,74 +383,35 @@ namespace AudioMixerApp.ViewModels
                      // Optionally show warning to user
                      // StatusText = "Warning: System Audio Failed";
                      // StatusColor = "Orange";
-                     _sysBuffer = null;
-                     _sysSampleProvider = null; // Ensure sample provider is also null
+                     // Don't stop everything, just proceed without system audio
+                     _sysBuffer = null; // Ensure buffer is null if capture fails
                      _audioMixerService.SetSystemAudioInput(null); // Ensure mixer doesn't use old buffer
                 }
                 else
                 {
-                    // Create buffer and sample provider for system audio input
+                    // Create buffer for system audio input and connect to mixer
                     if (_systemAudioCaptureService.WaveFormat != null)
                      {
                           _sysBuffer = new BufferedWaveProvider(_systemAudioCaptureService.WaveFormat)
                           {
                               BufferDuration = TimeSpan.FromMilliseconds(100), // Reduced buffer to 100ms
-                               DiscardOnBufferOverflow = true
-                           };
-                           // Convert sys buffer to ISampleProvider (assuming float format for now)
-                           // TODO: Add format conversion if necessary to match AEC/Mixer requirements
-                           _sysSampleProvider = _sysBuffer.ToSampleProvider();
-                           _audioMixerService.SetSystemAudioInput(_sysSampleProvider); // Mixer still needs system audio
-                     }
-                      else
+                              DiscardOnBufferOverflow = true
+                          };
+                          _audioMixerService.SetSystemAudioInput(_sysBuffer);
+                    }
+                     else
                     {
                         Console.WriteLine("Warning: System audio capture WaveFormat is null. Continuing without system audio.");
                         _sysBuffer = null;
-                        _sysSampleProvider = null;
                         _audioMixerService.SetSystemAudioInput(null);
                     }
-                 }
+                }
 
 
-                 // Initialize Echo Cancellation Service or set direct mic input
-                 ISampleProvider finalMicInput;
-                 if (UseEchoCancellation && _micSampleProvider != null && _sysSampleProvider != null)
-                 {
-                     // Ensure formats match before creating AEC service
-                     // Note: This basic check assumes sample rate, channels, and float encoding.
-                     // More robust format conversion might be needed in a real application.
-                     if (_micSampleProvider.WaveFormat.SampleRate == _sysSampleProvider.WaveFormat.SampleRate &&
-                         _micSampleProvider.WaveFormat.Channels == _sysSampleProvider.WaveFormat.Channels &&
-                         _micSampleProvider.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat)
-                     {
-                         _echoCancellationService = new EchoCancellationService(_micSampleProvider, _sysSampleProvider);
-                         finalMicInput = _echoCancellationService; // Use AEC output for mic input
-                         Console.WriteLine("Echo Cancellation Service Initialized and connected.");
-                     }
-                     else
-                     {
-                         Console.WriteLine("Warning: Mic and System audio formats do not match. Echo Cancellation disabled.");
-                         MessageBox.Show("Microphone and system audio formats are incompatible for echo cancellation. Using raw microphone input.", "Echo Cancellation Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
-                         finalMicInput = _micSampleProvider; // Fallback to raw mic input
-                     }
-                 }
-                 else
-                 {
-                      // Fallback if one of the providers is null or AEC is disabled
-                      finalMicInput = _micSampleProvider ?? new SilenceProvider(WaveFormat.CreateIeeeFloatWaveFormat(48000, 2)).ToSampleProvider(); // Use raw mic or silence if null
+                // Start playback
+                _audioOutputService.Play();
 
-                      if (UseEchoCancellation && (_micSampleProvider == null || _sysSampleProvider == null))
-                          Console.WriteLine("Skipping Echo Cancellation Service initialization (missing input).");
-                      else if (!UseEchoCancellation)
-                          Console.WriteLine("Echo Cancellation disabled by setting.");
-                 }
-                 _audioMixerService.SetMicrophoneInput(finalMicInput);
-
-
-                 // Start playback
-                 _audioOutputService.Play();
-
-                 // Apply initial volume/mute from UI
+                // Apply initial volume/mute from UI
                 _audioMixerService.SetMicrophoneVolume((float)(MicrophoneVolumePercent / 100.0));
                 _audioMixerService.SetMicrophoneMute(IsMicrophoneMuted);
 
@@ -523,17 +438,10 @@ namespace AudioMixerApp.ViewModels
         private void MicrophoneDataAvailable(object? sender, WaveInEventArgs e)
         {
             // If muted, don't process level or add to buffer
-            // Note: Data still needs to be buffered even if muted for AEC to potentially work correctly
-            //       if AEC is placed before the mixer's mute logic.
-            //       However, our current AEC is simple ducking and placed *after* the buffer,
-            //       and the mixer handles mute, so buffering when muted isn't strictly needed here.
-            //       We also prevent level meter updates when muted.
-            if (_micBuffer == null) return;
-            if (IsMicrophoneMuted)
+            if (IsMicrophoneMuted || _micBuffer == null)
             {
                  // Ensure level stays 0 if muted
-                 if (MicrophoneLevel != 0) MicrophoneLevel = 0;
-                 // We might still need to read/discard data from capture buffer if not buffering here
+                 if (IsMicrophoneMuted && MicrophoneLevel != 0) MicrophoneLevel = 0;
                  return;
             }
 
@@ -577,7 +485,6 @@ namespace AudioMixerApp.ViewModels
 
             _audioOutputService?.Dispose();
             _audioMixerService?.Dispose();
-            _echoCancellationService?.Dispose(); // Dispose AEC service
             _microphoneCaptureService?.Dispose();
             _systemAudioCaptureService?.Dispose();
             _audioDeviceService?.Dispose();
