@@ -71,7 +71,7 @@
         <!-- Level Meter (Task 29) -->
         <Label Grid.Row="4" Grid.Column="0" Content="Mic Level:" VerticalAlignment="Center"/>
         <ProgressBar Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Margin="5" Height="15" Minimum="0" Maximum="100"
-                     Value="{Binding MicrophoneLevel}"/>
+                     Value="{Binding MicrophoneLevel}" Foreground="{Binding LevelMeterColor}"/>
 
         <!-- Status Indicator (Task 30) -->
         <Label Grid.Row="5" Grid.Column="0" Content="Status:" VerticalAlignment="Center"/>

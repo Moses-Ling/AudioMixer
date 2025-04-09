@@ -125,7 +125,17 @@ namespace AudioMixerApp.ViewModels
                     Console.WriteLine($"Mute set to: {value}");
                     // Trigger saving settings when mute state changes
                     _ = SaveSettingsAsync();
-                }
+                    // If muted, reset the level meter immediately and change color
+                    if (value)
+                    {
+                        MicrophoneLevel = 0;
+                        LevelMeterColor = "LightGray"; // Color when muted
+                    }
+                    else
+                    {
+                        LevelMeterColor = "DodgerBlue"; // Restore default color when unmuted
+                    }
+                 }
             }
         }
 
@@ -149,6 +159,13 @@ namespace AudioMixerApp.ViewModels
         {
             get => _statusColor;
             set => SetProperty(ref _statusColor, value);
+        }
+
+        private string _levelMeterColor = "DodgerBlue"; // Default progress bar color
+        public string LevelMeterColor
+        {
+            get => _levelMeterColor;
+            set => SetProperty(ref _levelMeterColor, value);
         }
 
 
@@ -379,7 +396,13 @@ namespace AudioMixerApp.ViewModels
 
         private void MicrophoneDataAvailable(object? sender, WaveInEventArgs e)
         {
-            if (_micBuffer == null) return;
+            // If muted, don't process level or add to buffer
+            if (IsMicrophoneMuted || _micBuffer == null)
+            {
+                 // Ensure level stays 0 if muted
+                 if (IsMicrophoneMuted && MicrophoneLevel != 0) MicrophoneLevel = 0;
+                 return;
+            }
 
             // Add captured data to the buffer
             _micBuffer.AddSamples(e.Buffer, 0, e.BytesRecorded);
