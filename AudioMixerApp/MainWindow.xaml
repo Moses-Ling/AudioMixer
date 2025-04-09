@@ -4,8 +4,25 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AudioMixerApp"
+        xmlns:tb="http://www.hardcodet.net/taskbar" <!-- Add TaskbarIcon namespace -->
         mc:Ignorable="d"
-        Title="Windows Microphone Audio Mixer" Height="350" Width="500" MinHeight="300" MinWidth="450">
+        Title="Windows Microphone Audio Mixer" Height="350" Width="500" MinHeight="300" MinWidth="450"
+        StateChanged="Window_StateChanged"> <!-- Add StateChanged event handler -->
+
+    <!-- Taskbar Icon (Task 36 & 37) -->
+    <tb:TaskbarIcon x:Name="NotifyIcon"
+                    IconSource="/Images/DefaultIcon.ico" <!-- Placeholder Icon - Needs an actual icon file -->
+                    ToolTipText="Audio Mixer App"
+                    TrayMouseDoubleClick="NotifyIcon_TrayMouseDoubleClick">
+        <tb:TaskbarIcon.ContextMenu>
+            <ContextMenu>
+                <MenuItem Header="Show / Hide" Click="ShowHideMenuItem_Click"/>
+                <Separator/>
+                <MenuItem Header="Exit" Click="ExitMenuItem_Click"/>
+            </ContextMenu>
+        </tb:TaskbarIcon.ContextMenu>
+    </tb:TaskbarIcon>
+
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- Input Device -->
@@ -56,10 +73,10 @@
         <!-- Status Indicator (Task 30) -->
         <Label Grid.Row="5" Grid.Column="0" Content="Status:" VerticalAlignment="Center"/>
         <Ellipse Grid.Row="5" Grid.Column="2" Fill="{Binding StatusColor}" Width="15" Height="15" Margin="5,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
-                 ToolTip="{Binding StatusText}"/>
+                  ToolTip="{Binding StatusText}"/>
 
-        <!-- TODO: Add Start/Stop Button bound to StartStopCommand -->
-        <!-- Example: <Button Grid.Row="6" Grid.Column="1" Content="Start/Stop" Command="{Binding StartStopCommand}" Margin="5"/> -->
+        <!-- Start/Stop Button -->
+        <Button Grid.Row="6" Grid.Column="1" Content="Start / Stop Mixing" Command="{Binding StartStopCommand}" Margin="5" Padding="10,5"/>
 
     </Grid>
 </Window>
