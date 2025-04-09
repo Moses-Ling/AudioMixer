@@ -4,17 +4,21 @@ using NAudio.Wave.SampleProviders; // Requires NAudio NuGet package
 
 namespace AudioMixerApp.Services
 {
-    // Service responsible for mixing audio streams
+    // Service responsible for mixing audio streams using ISampleProvider inputs
     public class AudioMixerService : IDisposable, ISampleProvider
     {
-        private MixingSampleProvider? _mixer;
-        private ISampleProvider? _microphoneInputProvider;
-        private ISampleProvider? _systemAudioInputProvider;
-        private VolumeSampleProvider? _micVolumeProvider; // For volume/mute control
+        private readonly MixingSampleProvider _mixer;
+        private ISampleProvider? _microphoneInputProvider; // The raw or AEC-processed mic input
+        private ISampleProvider? _systemAudioInputProvider;  // The raw system audio input
+        private VolumeSampleProvider? _micVolumeProvider;    // Wrapper for volume/mute control
         private bool _isDisposed;
 
+        // Note: The UseEchoCancellation property was removed as the decision
+        // to use AEC is now handled in the ViewModel before setting the input.
+        // The mixer just accepts whatever ISampleProvider it's given for the mic.
+
         // The WaveFormat of the mixed output (determined by the mixer)
-        public WaveFormat WaveFormat => _mixer?.WaveFormat ?? WaveFormat.CreateIeeeFloatWaveFormat(44100, 2); // Default fallback
+        public WaveFormat WaveFormat => _mixer.WaveFormat;
 
         public AudioMixerService(WaveFormat outputFormat)
         {
@@ -23,130 +27,82 @@ namespace AudioMixerApp.Services
             _mixer.ReadFully = true; // Important for continuous playback
         }
 
-        // Adds or replaces the microphone input stream
-        public void SetMicrophoneInput(IWaveProvider microphoneInput)
+        // Adds or replaces the microphone input stream (expects ISampleProvider)
+        public void SetMicrophoneInput(ISampleProvider? microphoneInputProvider)
         {
-            // Remove existing microphone input if present
-            if (_micVolumeProvider != null && _mixer != null)
+            // Remove existing microphone input chain if present
+            if (_micVolumeProvider != null)
             {
-                _mixer.RemoveMixerInput((ISampleProvider)_micVolumeProvider);
-                _microphoneInputProvider = null;
-                _micVolumeProvider = null;
+                _mixer.RemoveMixerInput(_micVolumeProvider);
+                _micVolumeProvider = null; // Allow GC
             }
+            _microphoneInputProvider = microphoneInputProvider; // Store the (potentially AEC processed) input
 
-            if (microphoneInput == null || _mixer == null) return;
-
-            // Convert to ISampleProvider and handle potential format differences
-            _microphoneInputProvider = ConvertToSampleProvider(microphoneInput, _mixer.WaveFormat);
-
-            // Wrap in a VolumeSampleProvider for volume/mute control
-            _micVolumeProvider = new VolumeSampleProvider(_microphoneInputProvider);
-            _mixer.AddMixerInput(_micVolumeProvider);
-
-            Console.WriteLine("Microphone input added to mixer.");
-        }
-
-        // Adds or replaces the system audio input stream
-        public void SetSystemAudioInput(IWaveProvider systemAudioInput)
-        {
-             // Remove existing system audio input if present
-            if (_systemAudioInputProvider != null && _mixer != null)
+            if (_microphoneInputProvider != null)
             {
-                _mixer.RemoveMixerInput(_systemAudioInputProvider);
-                _systemAudioInputProvider = null;
-            }
+                // Wrap the final microphone input (raw or AEC) in a VolumeSampleProvider
+                _micVolumeProvider = new VolumeSampleProvider(_microphoneInputProvider);
+                // Apply current volume/mute state
+                // Retrieve volume before mute if possible, or use a stored value.
+                // For now, just apply based on current state (might restore to 1.0f if unmuted from 0).
+                float currentVolume = _micVolumeProvider.Volume; // Get current volume before potentially muting
+                SetMicrophoneVolume(currentVolume); // Re-apply volume (handles mute)
 
-            if (systemAudioInput == null || _mixer == null) return;
-
-            // Convert to ISampleProvider and handle potential format differences
-            _systemAudioInputProvider = ConvertToSampleProvider(systemAudioInput, _mixer.WaveFormat);
-            _mixer.AddMixerInput(_systemAudioInputProvider);
-
-            Console.WriteLine("System audio input added to mixer.");
-        }
-
-        // Helper to convert IWaveProvider to ISampleProvider and resample if needed
-        private ISampleProvider ConvertToSampleProvider(IWaveProvider input, WaveFormat targetFormat)
-        {
-            ISampleProvider sampleProvider;
-            if (input.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat &&
-                input.WaveFormat.SampleRate == targetFormat.SampleRate &&
-                input.WaveFormat.Channels == targetFormat.Channels)
-            {
-                // Already in the correct float format
-                sampleProvider = new WaveToSampleProvider(input);
-            }
-            else if (input.WaveFormat.Encoding == WaveFormatEncoding.Pcm)
-            {
-                 // Convert PCM to float
-                if (input.WaveFormat.BitsPerSample == 16)
-                    sampleProvider = new Pcm16BitToSampleProvider(input);
-                else if (input.WaveFormat.BitsPerSample == 24)
-                    sampleProvider = new Pcm24BitToSampleProvider(input);
-                else if (input.WaveFormat.BitsPerSample == 32)
-                    sampleProvider = new Pcm32BitToSampleProvider(input);
-                else
-                    throw new NotSupportedException($"PCM BitsPerSample {input.WaveFormat.BitsPerSample} not supported");
-            }
-             else if (input.WaveFormat.BitsPerSample == 32 && input.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat)
-            {
-                 // Already float, but might need channel/samplerate conversion later
-                 sampleProvider = new WaveToSampleProvider(input);
+                _mixer.AddMixerInput(_micVolumeProvider);
+                Console.WriteLine("Microphone input set/updated in mixer.");
             }
             else
             {
-                throw new NotSupportedException($"Input WaveFormat encoding {input.WaveFormat.Encoding} not supported");
+                Console.WriteLine("Microphone input cleared from mixer.");
             }
-
-            // Resample if sample rate or channel count differs (Task 17 & 20 - basic handling)
-            if (sampleProvider.WaveFormat.SampleRate != targetFormat.SampleRate ||
-                sampleProvider.WaveFormat.Channels != targetFormat.Channels)
-            {
-                Console.WriteLine($"Resampling required: From {sampleProvider.WaveFormat} to {targetFormat}");
-                // Using WdlResamplingSampleProvider for quality resampling
-                sampleProvider = new WdlResamplingSampleProvider(sampleProvider, targetFormat.SampleRate);
-
-                // Handle channel differences (mono to stereo, stereo to mono)
-                if (sampleProvider.WaveFormat.Channels == 1 && targetFormat.Channels == 2)
-                {
-                    sampleProvider = new MonoToStereoSampleProvider(sampleProvider);
-                }
-                else if (sampleProvider.WaveFormat.Channels == 2 && targetFormat.Channels == 1)
-                {
-                    sampleProvider = new StereoToMonoSampleProvider(sampleProvider);
-                }
-                // Ensure the final provider matches the target format exactly
-                 if (sampleProvider.WaveFormat.Channels != targetFormat.Channels || sampleProvider.WaveFormat.SampleRate != targetFormat.SampleRate)
-                 {
-                      throw new InvalidOperationException("Resampling did not produce the target WaveFormat.");
-                 }
-            }
-
-            return sampleProvider;
         }
 
+        // Adds or replaces the system audio input stream (expects ISampleProvider)
+        public void SetSystemAudioInput(ISampleProvider? systemAudioInputProvider)
+        {
+             // Remove existing system audio input if present
+            if (_systemAudioInputProvider != null)
+            {
+                _mixer.RemoveMixerInput(_systemAudioInputProvider);
+            }
+
+            _systemAudioInputProvider = systemAudioInputProvider;
+
+            if (_systemAudioInputProvider != null)
+            {
+                 // Add the new system audio input directly to the mixer
+                 _mixer.AddMixerInput(_systemAudioInputProvider);
+                 Console.WriteLine("System audio input set/updated in mixer.");
+            }
+             else
+             {
+                 Console.WriteLine("System audio input cleared from mixer.");
+             }
+             // Note: No need to reconfigure mic input here anymore,
+             // AEC decision is made in ViewModel before calling SetMicrophoneInput.
+        }
 
         // Sets the volume for the microphone input (0.0 to 1.0+)
-        public void SetMicrophoneVolume(float volume) // Task 18
+        public void SetMicrophoneVolume(float volume)
         {
             if (_micVolumeProvider != null)
             {
+                // Store the volume internally if needed for unmute, or handle in ViewModel
                 _micVolumeProvider.Volume = volume;
+                Console.WriteLine($"Mixer mic volume set to: {volume:F2}");
             }
         }
 
         // Mutes or unmutes the microphone input (Task 19)
         public void SetMicrophoneMute(bool isMuted)
         {
-             // Setting volume to 0 effectively mutes
-             SetMicrophoneVolume(isMuted ? 0.0f : (_micVolumeProvider?.Volume ?? 1.0f));
-             // Ideally, store the pre-mute volume to restore it accurately.
-             // For simplicity now, we might restore to 1.0f if unmuting from 0.
-             // A better approach involves storing the volume before muting.
-             // Let's refine this later if needed. If volume was 0 before mute, unmuting sets it to 1.
-             if (!isMuted && _micVolumeProvider != null && _micVolumeProvider.Volume == 0.0f)
+             if (_micVolumeProvider != null)
              {
-                 _micVolumeProvider.Volume = 1.0f; // Restore to default if unmuting from 0
+                 // A simple mute implementation by setting volume to 0.
+                 // A more robust implementation would store the volume before muting.
+                 // The ViewModel currently handles restoring volume when unmuting.
+                 _micVolumeProvider.Volume = isMuted ? 0.0f : (_micVolumeProvider.Volume > 0.0f ? _micVolumeProvider.Volume : 1.0f); // Restore or set to 1.0f
+                 Console.WriteLine($"Mixer mic mute set to: {isMuted} (Volume: {_micVolumeProvider.Volume:F2})");
              }
         }
 
@@ -154,6 +110,7 @@ namespace AudioMixerApp.Services
         // Implementation of ISampleProvider.Read for the mixer output
         public int Read(float[] buffer, int offset, int count)
         {
+            // Read from the internal mixer
             return _mixer?.Read(buffer, offset, count) ?? 0;
         }
 
@@ -171,12 +128,17 @@ namespace AudioMixerApp.Services
                 if (disposing)
                 {
                     // Dispose managed state (managed objects)
-                    _mixer = null; // The mixer itself doesn't seem IDisposable
-                    _microphoneInputProvider = null; // Assuming inputs are managed elsewhere
+                    // Remove inputs explicitly to release references if mixer holds them strongly
+                    if (_micVolumeProvider != null) _mixer?.RemoveMixerInput(_micVolumeProvider);
+                    if (_systemAudioInputProvider != null) _mixer?.RemoveMixerInput(_systemAudioInputProvider);
+
+                    _microphoneInputProvider = null;
                     _systemAudioInputProvider = null;
                     _micVolumeProvider = null;
+                    // Note: _echoCancellationService is managed and disposed by the ViewModel now
                 }
                 _isDisposed = true;
+                Console.WriteLine("AudioMixerService disposed.");
             }
         }
 
